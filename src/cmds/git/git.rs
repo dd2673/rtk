@@ -2728,6 +2728,15 @@ fn diffstat_row(line: &str) -> Option<String> {
 }
 
 fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<i32> {
+    // Porcelain (including -z records) is a machine-readable byte contract.
+    // The compact list route both drops flags and reformats the records.
+    if args.iter().any(|arg| arg == "--porcelain") {
+        let passthrough_args = std::iter::once(OsString::from("worktree"))
+            .chain(args.iter().map(OsString::from))
+            .collect::<Vec<_>>();
+        return run_passthrough(&passthrough_args, global_args, verbose);
+    }
+
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
