@@ -167,10 +167,11 @@ impl FilterStrategy for MinimalFilter {
         for line in content.lines() {
             let trimmed = line.trim();
 
-            // Handle block comments
+            // Only strip full-line blocks: inline markers may be string literals
+            // such as 'tests/**/*.test.ts', not comments.
             if let (Some(start), Some(end)) = (patterns.block_start, patterns.block_end) {
                 if !in_docstring
-                    && trimmed.contains(start)
+                    && trimmed.starts_with(start)
                     && !trimmed.starts_with(patterns.doc_block_start.unwrap_or("###"))
                 {
                     in_block_comment = true;
