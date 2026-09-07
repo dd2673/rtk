@@ -1801,7 +1801,11 @@ fn looks_like_file_path(token: &str) -> bool {
 
 fn rewrite_powershell_cmdlet(cmd_part: &str, redirect_suffix: &str) -> Option<String> {
     let args = split_arg_token_spans(cmd_part);
-    if has_powershell_expression_arg(&args) {
+    // PowerShell binds comma expressions as arrays; native tools receive a
+    // joined value instead. Defer even quoted commas rather than guess binding.
+    if has_powershell_expression_arg(&args)
+        || args.iter().skip(1).any(|(token, _, _)| token.contains(','))
+    {
         return None;
     }
     let (cmdlet, _, _) = args.first().copied()?;
@@ -1876,12 +1880,6 @@ fn rewrite_powershell_select_string(
     args: &[(&str, usize, usize)],
     redirect_suffix: &str,
 ) -> Option<String> {
-    // PowerShell binds comma expressions as arrays; native grep would receive
-    // a joined value instead. Defer even quoted commas rather than guess binding.
-    if args.iter().skip(1).any(|(token, _, _)| token.contains(',')) {
-        return None;
-    }
-
     let mut pattern: Option<&str> = None;
     let mut paths: Vec<&str> = Vec::new();
     let mut extra: Vec<&str> = Vec::new();
@@ -7182,6 +7180,24 @@ mod tests {
             rewrite_command_no_prefixes(r#"Get-Content -Path "file with spaces.txt""#, &[]),
             Some(r#"rtk read "file with spaces.txt""#.into())
         );
+    }
+
+    #[test]
+    fn test_runlog_powershell_read_and_list_arrays_passthrough() {
+        for command in [
+            "Get-ChildItem -Force .agents,.codex",
+            "Get-ChildItem -LiteralPath 'a','b'",
+            "gci -Path 'a', 'b'",
+            "Get-Content -LiteralPath 'a.txt','b.txt'",
+            "Get-Content -Path 'a.txt', 'b.txt'",
+            "gc 'a.txt','b.txt'",
+        ] {
+            assert_eq!(
+                rewrite_command_no_prefixes(command, &[]),
+                None,
+                "PowerShell must retain ownership of array binding: {command}"
+            );
+        }
     }
 
     #[test]
