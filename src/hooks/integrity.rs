@@ -293,7 +293,9 @@ fn report_hook_status(verbose: u8) -> Result<()> {
             for path in present_paths {
                 println!("      found: {}", path.display());
             }
-            println!("      Run `rtk init -g --auto-patch` to cover settings.json and settings.local.json.");
+            println!(
+                "      Run `rtk init -g --auto-patch` to cover settings.json and settings.local.json."
+            );
             return Ok(());
         }
         println!("SKIP  RTK hook not installed");

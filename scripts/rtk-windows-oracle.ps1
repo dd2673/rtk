@@ -516,8 +516,8 @@ function Test-DocsCodexHookConsistency {
         @{ path = 'docs/guide/getting-started/installation.md'; forbidden = 'For full hook support, use|Native Windows.*limited support|auto-rewrite hook.*Unix shell|WSL.*required for hook support'; required = 'Native Windows hooks are supported.*Claude Code.*Codex CLI' },
         @{ path = 'docs/guide/getting-started/supported-agents.md'; forbidden = 'Codex CLI.*AGENTS\.md instructions|Rules file integrations \([^)]*Codex|Auto-rewrite does not work|falls back to \*\*CLAUDE\.md injection mode\*\*|For full hook support on Windows, use|Full hook integrations.*guaranteed|Codex CLI.*guaranteed'; required = 'Codex CLI.*rtk hook codex.*updatedInput' },
         @{ path = 'docs/guide/resources/troubleshooting.md'; forbidden = 'auto-rewrite hook.*Unix shell|Native Windows does not have one|Native Windows doesn''t have one|falls back to CLAUDE\.md injection|won''t auto-rewrite commands'; required = 'rtk init -g --codex' },
-        @{ path = 'hooks/codex/README.md'; forbidden = 'no programmatic hook|prompt-level only|Installed to .* by `rtk init --codex`'; required = 'rtk init -g --codex.*hooks\.json' },
-        @{ path = 'hooks/codex/README.md'; forbidden = 'no programmatic hook|prompt-level only|project-local Codex configs install hooks'; required = 'rtk init --codex.*project-scoped guidance only' }
+        @{ path = 'hooks/codex/README.md'; forbidden = 'no programmatic hook|prompt-level only'; required = 'rtk init -g --codex.*\(global\)' },
+        @{ path = 'hooks/codex/README.md'; forbidden = 'no programmatic hook|prompt-level only|project-scoped guidance only'; required = 'rtk init --codex.*\(project\)' }
     )
     $items = @()
     foreach ($check in $checks) {
@@ -582,7 +582,7 @@ function Test-InitShowUsage {
     $artifact = Join-Path $Out "artifacts\init-codex-show.txt"
     Save-Text $artifact ($result.stdout + $result.stderr)
     $hasStatus = $result.stdout.Contains("Global hooks.json")
-    $hasUsage = $result.stdout.Contains('Configure $CODEX_HOME/hooks.json + AGENTS.md + RTK.md')
+    $hasUsage = $result.stdout.Contains('Configure global AGENTS.md + RTK.md + hooks.json')
     $hasExecutableResolution = $result.stdout.Contains("command resolves to")
     [pscustomobject]@{
         name = "init_codex_show_usage_hooks_json"
@@ -640,7 +640,8 @@ function Invoke-FullCargoTestGate {
     $env:RTK_DISABLED = "1"
     $env:CARGO_BUILD_JOBS = "4"
     try {
-        $result = Invoke-Capture -FileName "cargo" -Arguments @("test", "--", "--test-threads=1") -WorkingDirectory $Repo -TimeoutSeconds 180
+        # The expanded upstream integration suite takes over five minutes on this Windows host.
+        $result = Invoke-Capture -FileName "cargo" -Arguments @("test", "--", "--test-threads=1") -WorkingDirectory $Repo -TimeoutSeconds 600
     } finally {
         if ($null -eq $oldDisabled) { Remove-Item Env:\RTK_DISABLED -ErrorAction SilentlyContinue } else { $env:RTK_DISABLED = $oldDisabled }
         if ($null -eq $oldJobs) { Remove-Item Env:\CARGO_BUILD_JOBS -ErrorAction SilentlyContinue } else { $env:CARGO_BUILD_JOBS = $oldJobs }
@@ -784,11 +785,11 @@ $hookCases = @(
     Invoke-HookCase -Name "claude_shell_git_status" -Agent "claude" -Payload ([pscustomobject]@{ tool_name="Shell"; tool_input=[pscustomobject]@{ command="git status" } }) -Expected "rtk git status" -RtkPath $rtkPath -Out $out
     Invoke-HookCase -Name "claude_powershell_get_content" -Agent "claude" -Payload ([pscustomobject]@{ tool_name="PowerShell"; tool_input=[pscustomobject]@{ command="Get-Content -LiteralPath Cargo.toml -TotalCount 3" } }) -Expected $null -RtkPath $rtkPath -Out $out
     Invoke-HookCase -Name "claude_powershell_instruction_passthrough" -Agent "claude" -Payload ([pscustomobject]@{ tool_name="PowerShell"; tool_input=[pscustomobject]@{ command="Get-Content -LiteralPath C:\validation\SKILL.md" } }) -Expected $null -RtkPath $rtkPath -Out $out
-    Invoke-HookCase -Name "codex_bash_git_status" -Agent "codex" -Payload ([pscustomobject]@{ tool_name="Bash"; tool_input=[pscustomobject]@{ command="git status" } }) -Expected $null -RtkPath $rtkPath -Out $out
-    Invoke-HookCase -Name "codex_bypass_permissions_git_status" -Agent "codex" -Payload ([pscustomobject]@{ tool_name="Bash"; tool_input=[pscustomobject]@{ command="git status" }; permission_mode="bypassPermissions" }) -Expected "rtk git status" -ExpectedPermissionDecision "allow" -RtkPath $rtkPath -Out $out
-    Invoke-HookCase -Name "codex_shell_git_status" -Agent "codex" -Payload ([pscustomobject]@{ tool_name="Shell"; tool_input=[pscustomobject]@{ command="git status" } }) -Expected $null -RtkPath $rtkPath -Out $out
-    Invoke-HookCase -Name "codex_powershell_get_content" -Agent "codex" -Payload ([pscustomobject]@{ tool_name="PowerShell"; tool_input=[pscustomobject]@{ command="Get-Content -LiteralPath Cargo.toml -TotalCount 3" } }) -Expected $null -RtkPath $rtkPath -Out $out
-    Invoke-HookCase -Name "codex_powershell_instruction_passthrough" -Agent "codex" -Payload ([pscustomobject]@{ tool_name="PowerShell"; tool_input=[pscustomobject]@{ command="Get-Content -LiteralPath C:\validation\SKILL.md" } }) -Expected $null -RtkPath $rtkPath -Out $out
+    Invoke-HookCase -Name "codex_bash_git_status" -Agent "codex" -Payload ([pscustomobject]@{ hook_event_name="PreToolUse"; tool_name="Bash"; tool_input=[pscustomobject]@{ command="git status" }; permission_mode="default" }) -Expected $null -RtkPath $rtkPath -Out $out
+    Invoke-HookCase -Name "codex_bypass_permissions_git_status" -Agent "codex" -Payload ([pscustomobject]@{ hook_event_name="PreToolUse"; tool_name="Bash"; tool_input=[pscustomobject]@{ command="git status" }; permission_mode="bypassPermissions" }) -Expected "rtk git status" -ExpectedPermissionDecision "allow" -RtkPath $rtkPath -Out $out
+    Invoke-HookCase -Name "codex_shell_git_status" -Agent "codex" -Payload ([pscustomobject]@{ hook_event_name="PreToolUse"; tool_name="Shell"; tool_input=[pscustomobject]@{ command="git status" }; permission_mode="default" }) -Expected $null -RtkPath $rtkPath -Out $out
+    Invoke-HookCase -Name "codex_powershell_get_content" -Agent "codex" -Payload ([pscustomobject]@{ hook_event_name="PreToolUse"; tool_name="PowerShell"; tool_input=[pscustomobject]@{ command="Get-Content -LiteralPath Cargo.toml -TotalCount 3" }; permission_mode="default" }) -Expected $null -RtkPath $rtkPath -Out $out
+    Invoke-HookCase -Name "codex_powershell_instruction_passthrough" -Agent "codex" -Payload ([pscustomobject]@{ hook_event_name="PreToolUse"; tool_name="PowerShell"; tool_input=[pscustomobject]@{ command="Get-Content -LiteralPath C:\validation\SKILL.md" }; permission_mode="default" }) -Expected $null -RtkPath $rtkPath -Out $out
 )
 
 $badPayload = Invoke-HookCase -Name "codex_bad_payload_must_not_rewrite" -Agent "codex" -Payload ([pscustomobject]@{ tool="shell"; input=[pscustomobject]@{ command="git status" } }) -Expected $null -RtkPath $rtkPath -Out $out
@@ -804,7 +805,7 @@ $matrixCases = @(
     Invoke-HookCheckCase -Name "matrix_git_push" -Command "git push" -Expected "rtk git push" -RtkPath $rtkPath -Out $out
     Invoke-HookCheckCase -Name "matrix_git_pull" -Command "git pull" -Expected "rtk git pull" -RtkPath $rtkPath -Out $out
     Invoke-HookCheckCase -Name "matrix_cat" -Command "cat package.json" -Expected "rtk read package.json" -RtkPath $rtkPath -Out $out
-    Invoke-HookCheckCase -Name "matrix_head" -Command "head -n 20 Cargo.toml" -Expected "rtk read Cargo.toml --max-lines 20" -RtkPath $rtkPath -Out $out
+    Invoke-HookCheckCase -Name "matrix_head" -Command "head -n 20 Cargo.toml" -Expected "rtk read Cargo.toml --head-lines 20" -RtkPath $rtkPath -Out $out
     Invoke-HookCheckCase -Name "matrix_tail" -Command "tail -n 20 Cargo.toml" -Expected "rtk read Cargo.toml --tail-lines 20" -RtkPath $rtkPath -Out $out
     Invoke-HookCheckCase -Name "matrix_ls" -Command "ls" -Expected "rtk ls" -RtkPath $rtkPath -Out $out
     Invoke-HookCheckCase -Name "matrix_grep" -Command "grep -rn fn src" -Expected "rtk grep -rn fn src" -RtkPath $rtkPath -Out $out
@@ -844,7 +845,7 @@ $cases = @(
     Invoke-RawRtkCase -Name "grep_smart_case" -RawShell "powershell" -RawCommand "rg -S RTK_DISABLED src" -RtkArgs @("rg", "-S", "RTK_DISABLED", "src") -Cwd $repo -ExpectedExit 0 -MustContain @("RTK_DISABLED") -MinSavings 0.10 -RtkPath $rtkPath -DbPath $dbPath -Out $out
     Invoke-RawRtkCase -Name "grep_dash_pattern" -RawShell "powershell" -RawCommand "rg -n -- '--reason|FAST_QUOTE_RETRY_REASON|pending' '$fixtureDir'" -RtkArgs @("rg", "-n", "--", "--reason|FAST_QUOTE_RETRY_REASON|pending", $fixtureDir) -Cwd $repo -ExpectedExit 0 -MustContain @("FAST_QUOTE_RETRY_REASON") -MinSavings -0.20 -RtkPath $rtkPath -DbPath $dbPath -Out $out
     Invoke-RawRtkCase -Name "git_diff_check_clean" -RawShell "powershell" -RawCommand "git diff --check" -RtkArgs @("git", "diff", "--check") -Cwd $repo -ExpectedExit 0 -MustContain @() -MinSavings 0.00 -RtkPath $rtkPath -DbPath $dbPath -Out $out
-    Invoke-RawRtkCase -Name "rtk_disabled_powershell_bypass" -RawShell "powershell" -RawCommand "git status --short" -RtkArgs @("hook", "check", "`$env:RTK_DISABLED='1'; git status --short") -Cwd $repo -ExpectedExit 0 -ExpectedRawExit 0 -ExpectedRtkExit 1 -MustContain @("RTK_DISABLED=1 detected") -MinSavings 0.00 -RtkPath $rtkPath -DbPath $dbPath -Out $out
+    Invoke-RawRtkCase -Name "rtk_disabled_powershell_bypass" -RawShell "powershell" -RawCommand "git status --short" -RtkArgs @("hook", "check", "`$env:RTK_DISABLED='1'; git status --short") -Cwd $repo -ExpectedExit 0 -ExpectedRawExit 0 -ExpectedRtkExit 1 -MustContain @("No rewrite for:", "RTK_DISABLED") -MinSavings 0.00 -RtkPath $rtkPath -DbPath $dbPath -Out $out
     Invoke-RawRtkCase -Name "cmd_grep_case" -RawShell "cmd" -RawCommand "rg -n fn src" -RtkArgs @("rg", "fn", "src") -Cwd $repo -ExpectedExit 0 -MustContain @("matches") -MinSavings 0.70 -RtkPath $rtkPath -DbPath $dbPath -Out $out
     Invoke-RawRtkCase -Name "bash_grep_case" -RawShell "bash" -RawCommand "rg -n 'fn ' src" -RtkArgs @("rg", "fn ", "src") -Cwd $repo -ExpectedExit 0 -MustContain @("matches") -MinSavings 0.70 -RtkPath $rtkPath -DbPath $dbPath -Out $out
     Invoke-RawRtkCase -Name "grep_dashdash_multiple_paths" -RawShell "powershell" -RawCommand "rg -n -- 'Codex|Prompt-level' hooks docs/contributing/TECHNICAL.md" -RtkArgs @("rg", "-n", "--", "Codex|Prompt-level", "hooks", "docs/contributing/TECHNICAL.md") -Cwd $repo -ExpectedExit 0 -MustContain @("Codex CLI") -MinSavings 0.00 -RtkPath $rtkPath -DbPath $dbPath -Out $out

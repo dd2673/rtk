@@ -234,38 +234,23 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_default_log_path_prefers_userprofile_when_home_missing() {
-        let old_home = std::env::var_os("HOME");
-        let old_userprofile = std::env::var_os("USERPROFILE");
-        let old_audit_dir = std::env::var_os("RTK_AUDIT_DIR");
         let home = std::env::temp_dir().join(format!("rtk-test-audit-home-{}", std::process::id()));
-
-        std::env::remove_var("HOME");
-        std::env::remove_var("RTK_AUDIT_DIR");
-        std::env::set_var("USERPROFILE", &home);
-
-        assert_eq!(
-            default_log_path(),
-            home.join(".local")
-                .join("share")
-                .join("rtk")
-                .join("hook-audit.log")
+        temp_env::with_vars(
+            [
+                ("HOME", None::<&str>),
+                ("RTK_AUDIT_DIR", None),
+                ("USERPROFILE", Some(home.to_str().unwrap())),
+            ],
+            || {
+                assert_eq!(
+                    default_log_path(),
+                    home.join(".local")
+                        .join("share")
+                        .join("rtk")
+                        .join("hook-audit.log")
+                );
+            },
         );
-
-        if let Some(value) = old_home {
-            std::env::set_var("HOME", value);
-        } else {
-            std::env::remove_var("HOME");
-        }
-        if let Some(value) = old_userprofile {
-            std::env::set_var("USERPROFILE", value);
-        } else {
-            std::env::remove_var("USERPROFILE");
-        }
-        if let Some(value) = old_audit_dir {
-            std::env::set_var("RTK_AUDIT_DIR", value);
-        } else {
-            std::env::remove_var("RTK_AUDIT_DIR");
-        }
     }
 
     fn make_entry(action: &str, cmd: &str) -> AuditEntry {
